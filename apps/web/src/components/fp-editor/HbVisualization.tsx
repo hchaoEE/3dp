@@ -1,7 +1,7 @@
 'use client';
 
 import { useFpStore } from '@/store/fp-store';
-import { SCALE, TIER_SPACING } from './DieLayer';
+import { SCALE, getBondingInterfaceY } from './DieLayer';
 import { Html } from '@react-three/drei';
 import type { HbArray, DieSpec } from '@chip3d/sdk';
 
@@ -25,10 +25,10 @@ export function HbVisualization({ hbArray, dies }: Props) {
   const regionH = hbArray.region.height * SCALE;
   const x = hbArray.region.x * SCALE + regionW / 2;
   const z = hbArray.region.y * SCALE + regionH / 2;
-  const yBetween = (fromDie.tier * TIER_SPACING + toDie.tier * TIER_SPACING) / 2 + 0.15;
+  const yBetween = getBondingInterfaceY();
 
   const padCount = Math.min(hbArray.channelCount, 50);
-  const cols = Math.ceil(Math.sqrt(padCount));
+  const cols = Math.max(1, Math.ceil(Math.sqrt(padCount)));
   const rows = Math.ceil(padCount / cols);
   const spacingX = regionW / (cols + 1);
   const spacingZ = regionH / (rows + 1);
@@ -45,7 +45,7 @@ export function HbVisualization({ hbArray, dies }: Props) {
           <meshStandardMaterial
             color={isSelected ? '#00ffcc' : '#00aaff'}
             transparent
-            opacity={0.8}
+            opacity={0.85}
           />
         </mesh>,
       );
@@ -55,13 +55,12 @@ export function HbVisualization({ hbArray, dies }: Props) {
 
   return (
     <group onClick={(e) => { e.stopPropagation(); selectHb(hbArray.id); }}>
-      {/* Region outline */}
       <mesh position={[x, yBetween, z]}>
         <boxGeometry args={[regionW, 0.05, regionH]} />
         <meshStandardMaterial
           color={isSelected ? '#00ffcc' : '#0088cc'}
           transparent
-          opacity={0.3}
+          opacity={0.25}
         />
       </mesh>
       {pads}
@@ -69,9 +68,8 @@ export function HbVisualization({ hbArray, dies }: Props) {
         <Html position={[x, yBetween + 0.5, z]} center>
           <div className="bg-cyan-900/90 text-white text-xs px-2 py-1 rounded whitespace-nowrap pointer-events-none">
             <div className="font-bold">HB: {hbArray.id}</div>
-            <div>Channels: {hbArray.channelCount}</div>
-            <div>Pitch: {hbArray.pitch}µm</div>
-            <div>{hbArray.fromDie} → {hbArray.toDie}</div>
+            <div>Channels: {hbArray.channelCount} | Pitch: {hbArray.pitch}µm</div>
+            <div>F2F bonding: {hbArray.fromDie} ↔ {hbArray.toDie}</div>
           </div>
         </Html>
       )}

@@ -1,11 +1,16 @@
 /** 3D Floorplan data structures: partition, die, modules, TSV, HB */
 
+export type StackingMode = 'face_to_face' | 'face_to_back';
+export type FaceDirection = 'up' | 'down';
+
 export interface DieSpec {
   id: string;
   name: string;
   tier: number;
   width: number;
   height: number;
+  /** Face direction: 'up' = active side faces up, 'down' = flipped (F2F top die) */
+  faceDirection: FaceDirection;
   techConstraints?: Record<string, unknown>;
 }
 
@@ -161,6 +166,8 @@ export interface FpParams {
   nets: NetSpec[];
   tsvRules: TsvRules;
   hbRules: HbRules;
+  /** Stacking mode: face_to_face or face_to_back */
+  stackingMode: StackingMode;
   partitionStrategy: 'greedy' | 'fm' | 'simulated_annealing';
   costWeights: CostWeights;
   constraints: FpConstraints;

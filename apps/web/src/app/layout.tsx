@@ -20,6 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
             <nav className="flex gap-4 text-sm">
               <a href="/" className="text-gray-300 hover:text-white transition-colors">Projects</a>
+              <a href="/thermal" className="text-gray-300 hover:text-white transition-colors">Thermal Sim</a>
             </nav>
           </header>
           <main className="flex-1">{children}</main>

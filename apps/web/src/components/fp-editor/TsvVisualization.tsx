@@ -1,9 +1,8 @@
 'use client';
 
 import { useFpStore } from '@/store/fp-store';
-import { SCALE, TIER_SPACING } from './DieLayer';
+import { SCALE, getDieY, DIE_THICKNESS } from './DieLayer';
 import { Html } from '@react-three/drei';
-import * as THREE from 'three';
 import type { TsvArray, DieSpec } from '@chip3d/sdk';
 
 interface Props {
@@ -24,13 +23,16 @@ export function TsvVisualization({ tsvArray, dies }: Props) {
 
   const x = tsvArray.region.x * SCALE + (tsvArray.region.width * SCALE) / 2;
   const z = tsvArray.region.y * SCALE + (tsvArray.region.height * SCALE) / 2;
-  const yStart = fromDie.tier * TIER_SPACING + 0.3;
-  const yEnd = toDie.tier * TIER_SPACING;
-  const height = Math.abs(yEnd - yStart);
-  const yCenter = (yStart + yEnd) / 2;
+
+  const fromY = getDieY(fromDie);
+  const toY = getDieY(toDie);
+  const yBottom = Math.min(fromY, toY) - DIE_THICKNESS / 2;
+  const yTop = Math.max(fromY, toY) + DIE_THICKNESS / 2;
+  const height = yTop - yBottom;
+  const yCenter = (yTop + yBottom) / 2;
 
   const pillarCount = Math.min(tsvArray.count, 20);
-  const cols = Math.ceil(Math.sqrt(pillarCount));
+  const cols = Math.max(1, Math.ceil(Math.sqrt(pillarCount)));
   const rows = Math.ceil(pillarCount / cols);
   const spacingX = tsvArray.region.width * SCALE / (cols + 1);
   const spacingZ = tsvArray.region.height * SCALE / (rows + 1);
@@ -59,11 +61,11 @@ export function TsvVisualization({ tsvArray, dies }: Props) {
     <group onClick={(e) => { e.stopPropagation(); selectTsv(tsvArray.id); }}>
       {pillars}
       {isSelected && (
-        <Html position={[x, yCenter + height / 2 + 0.3, z]} center>
+        <Html position={[x, yTop + 0.3, z]} center>
           <div className="bg-orange-900/90 text-white text-xs px-2 py-1 rounded whitespace-nowrap pointer-events-none">
             <div className="font-bold">TSV: {tsvArray.id}</div>
             <div>Count: {tsvArray.count}</div>
-            <div>{tsvArray.fromDie} → {tsvArray.toDie}</div>
+            <div>{tsvArray.fromDie} ↔ {tsvArray.toDie}</div>
           </div>
         </Html>
       )}

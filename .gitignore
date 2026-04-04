@@ -7,3 +7,4 @@ out/
 .env.local
 .env.*.local
 data/artifacts/
+dump.rdb

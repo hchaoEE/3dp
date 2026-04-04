@@ -67,6 +67,7 @@ function generateReport(
     '# 3D Floorplan Report',
     '',
     '## Partition Summary',
+    `- Stacking: **${params.stackingMode || 'face_to_back'}**`,
     `- Strategy: ${params.partitionStrategy}`,
     `- Dies: ${params.dies.length}`,
     `- Modules: ${params.modules.length}`,

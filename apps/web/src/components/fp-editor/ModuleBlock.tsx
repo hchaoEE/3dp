@@ -1,11 +1,11 @@
 'use client';
 
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState } from 'react';
 import * as THREE from 'three';
 import { ThreeEvent } from '@react-three/fiber';
 import { useFpStore } from '@/store/fp-store';
 import { Html } from '@react-three/drei';
-import { SCALE, TIER_SPACING } from './DieLayer';
+import { SCALE, getModuleY } from './DieLayer';
 import type { ModulePlacement, DieSpec, ModuleSpec } from '@chip3d/sdk';
 
 const MODULE_COLORS = [
@@ -34,14 +34,16 @@ export function ModuleBlock({ placement, die, moduleSpec, colorIndex }: Props) {
 
   const w = placement.width * SCALE;
   const h = placement.height * SCALE;
-  const blockH = 0.5;
+  const blockH = 0.4;
   const x = placement.x * SCALE + w / 2;
-  const y = die.tier * TIER_SPACING + 0.3;
+  const y = getModuleY(die, blockH);
   const z = placement.y * SCALE + h / 2;
 
   const isSelected = selectedModuleId === placement.moduleId;
   const isHovered = hoveredModuleId === placement.moduleId;
   const color = MODULE_COLORS[colorIndex % MODULE_COLORS.length];
+
+  const labelY = die.faceDirection === 'down' ? y - blockH / 2 - 0.2 : y + blockH / 2 + 0.2;
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
@@ -76,7 +78,7 @@ export function ModuleBlock({ placement, die, moduleSpec, colorIndex }: Props) {
     <group>
       <mesh
         ref={meshRef}
-        position={[x, y + blockH / 2, z]}
+        position={[x, y, z]}
         onClick={handleClick}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -94,11 +96,11 @@ export function ModuleBlock({ placement, die, moduleSpec, colorIndex }: Props) {
         />
       </mesh>
       {visibleLayers.labels && (isHovered || isSelected) && (
-        <Html position={[x, y + blockH + 0.3, z]} center>
+        <Html position={[x, labelY, z]} center>
           <div className="bg-gray-900/90 text-white text-xs px-2 py-1 rounded whitespace-nowrap pointer-events-none">
             <div className="font-bold">{moduleSpec.name}</div>
-            <div>Area: {moduleSpec.area.toFixed(0)}</div>
-            <div>Power: {moduleSpec.power.toFixed(2)}W</div>
+            <div>Die: {die.name} ({die.faceDirection === 'down' ? 'flipped' : 'normal'})</div>
+            <div>Area: {moduleSpec.area.toFixed(0)} | Power: {moduleSpec.power.toFixed(2)}W</div>
           </div>
         </Html>
       )}

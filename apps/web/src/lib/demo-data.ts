@@ -8,8 +8,8 @@ import type {
 } from '@chip3d/sdk';
 
 export const demoDies: DieSpec[] = [
-  { id: 'die-bottom', name: 'Bottom Die', tier: 0, width: 500, height: 400, techConstraints: {} },
-  { id: 'die-top', name: 'Top Die', tier: 1, width: 500, height: 400, techConstraints: {} },
+  { id: 'die-bottom', name: 'Bottom Die', tier: 0, width: 500, height: 400, faceDirection: 'up', techConstraints: {} },
+  { id: 'die-top', name: 'Top Die', tier: 1, width: 500, height: 400, faceDirection: 'down', techConstraints: {} },
 ];
 
 export const demoModules: ModuleSpec[] = [
@@ -42,6 +42,7 @@ export const demoFpParams: FpParams = {
   nets: demoNets,
   tsvRules: { pitch: 10, keepout: 20, maxDensity: 0.15 },
   hbRules: { pitch: 5, keepout: 10, maxDensity: 0.25 },
+  stackingMode: 'face_to_face',
   partitionStrategy: 'simulated_annealing',
   costWeights: {
     areaBalance: 2.0,
