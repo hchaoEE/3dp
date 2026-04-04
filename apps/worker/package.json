@@ -1,0 +1,26 @@
+{
+  "name": "@chip3d/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@chip3d/sdk": "workspace:*",
+    "@chip3d/fp-engine": "workspace:*",
+    "@chip3d/thermal-engine": "workspace:*",
+    "@chip3d/eda-plugins": "workspace:*",
+    "@prisma/client": "latest",
+    "bullmq": "latest",
+    "ioredis": "latest",
+    "uuid": "latest"
+  },
+  "devDependencies": {
+    "tsx": "latest",
+    "typescript": "latest"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "chip3d-platform",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --parallel -r run dev",
+    "build": "pnpm -r run build",
+    "lint": "pnpm -r run lint",
+    "clean": "pnpm -r run clean"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/engines",
+      "prisma",
+      "esbuild",
+      "sharp",
+      "msgpackr-extract"
+    ]
+  }
+}
