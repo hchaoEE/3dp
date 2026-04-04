@@ -14,7 +14,7 @@
     "@chip3d/fp-engine": "workspace:*",
     "@chip3d/thermal-engine": "workspace:*",
     "@chip3d/eda-plugins": "workspace:*",
-    "@prisma/client": "latest",
+    "@prisma/client": "^6",
     "bullmq": "latest",
     "ioredis": "latest",
     "uuid": "latest"

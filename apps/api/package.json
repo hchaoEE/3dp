@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@chip3d/sdk": "workspace:*",
-    "@prisma/client": "latest",
+    "@prisma/client": "^6",
     "bullmq": "latest",
     "cors": "latest",
     "express": "latest",
@@ -26,7 +26,7 @@
     "@types/cors": "latest",
     "@types/express": "latest",
     "@types/uuid": "latest",
-    "prisma": "latest",
+    "prisma": "^6",
     "tsx": "latest",
     "typescript": "latest"
   }
