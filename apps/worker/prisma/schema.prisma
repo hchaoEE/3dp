@@ -1,0 +1,124 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  designs Design[]
+  flows   Flow[]
+  runs    Run[]
+}
+
+model Design {
+  id        String   @id @default(uuid())
+  projectId String
+  name      String
+  version   Int      @default(1)
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model Flow {
+  id          String   @id @default(uuid())
+  projectId   String
+  name        String
+  description String?
+  spec        Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  runs    Run[]
+
+  @@index([projectId])
+}
+
+model Run {
+  id        String   @id @default(uuid())
+  projectId String
+  flowId    String
+  status    String   @default("pending")
+  params    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  startedAt DateTime?
+  endedAt   DateTime?
+
+  project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  flow     Flow      @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  stepRuns StepRun[]
+
+  @@index([projectId])
+  @@index([flowId])
+  @@index([status])
+}
+
+model StepRun {
+  id        String   @id @default(uuid())
+  runId     String
+  stepId    String
+  stepType  String
+  impl      String
+  tool      String?
+  status    String   @default("pending")
+  params    Json?
+  inputs    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  startedAt DateTime?
+  endedAt   DateTime?
+  error     String?
+
+  run       Run        @relation(fields: [runId], references: [id], onDelete: Cascade)
+  artifacts Artifact[]
+  logs      LogEvent[]
+
+  @@index([runId])
+  @@index([status])
+}
+
+model Artifact {
+  id        String   @id @default(uuid())
+  stepRunId String
+  name      String
+  type      String
+  path      String
+  hash      String?
+  size      Int?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  stepRun StepRun @relation(fields: [stepRunId], references: [id], onDelete: Cascade)
+
+  @@index([stepRunId])
+  @@index([type])
+}
+
+model LogEvent {
+  id        String   @id @default(uuid())
+  stepRunId String
+  level     String   @default("info")
+  message   String
+  data      Json?
+  timestamp DateTime @default(now())
+
+  stepRun StepRun @relation(fields: [stepRunId], references: [id], onDelete: Cascade)
+
+  @@index([stepRunId])
+  @@index([timestamp])
+}
