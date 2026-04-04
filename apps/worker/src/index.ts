@@ -1,6 +1,17 @@
 import { Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { executeRun } from './executor.js';
+import { PluginRegistry, MockPlugin, YosysPlugin } from '@chip3d/eda-plugins';
+
+const registry = PluginRegistry.getInstance();
+const mockPlugin = new MockPlugin();
+for (const step of mockPlugin.manifest.supportedSteps) {
+  registry.register(step, mockPlugin);
+}
+registry.register('mock', mockPlugin);
+registry.register('yosys', new YosysPlugin());
+
+console.log('[Worker] Registered plugins:', registry.list().map((p) => p.name).join(', '));
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 

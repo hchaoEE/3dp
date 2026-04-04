@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@chip3d/sdk": "workspace:*",
+    "@chip3d/fp-engine": "workspace:*",
+    "@chip3d/thermal-engine": "workspace:*",
     "@react-three/drei": "latest",
     "@react-three/fiber": "latest",
     "lucide-react": "latest",
@@ -22,6 +24,7 @@
     "zustand": "latest"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.2",
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
