@@ -8,3 +8,9 @@ out/
 .env.*.local
 data/artifacts/
 dump.rdb
+
+# Flow generated directories
+flow/logs/
+flow/objects/
+flow/reports/
+flow/results/

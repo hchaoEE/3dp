@@ -1,0 +1,1 @@
+docker run -it --rm --privileged -v $(pwd):/Flow -w /Flow openroad/orfs:latest sh -c "ln -s /OpenROAD-flow-scripts/tools /tools && bash"
