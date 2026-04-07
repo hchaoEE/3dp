@@ -124,12 +124,12 @@ def parse_def_file(def_path, cell_sizes=None):
     pins_section = re.search(r'PINS\s+\d+\s*;(.*?)END\s+PINS', content, re.DOTALL)
     if pins_section:
         pins_text = pins_section.group(1)
-        # Parse each pin
-        # Pattern for pin with LAYER and PLACED/FIXED
-        pin_blocks = re.findall(r'-\s+(\S+)\s+.*?;\s*(?=\n\s*-|\nEND\s+PINS|\Z)', pins_text, re.DOTALL)
-        for pin_block in pin_blocks:
+        # Parse each pin block (ends with ;)
+        pin_pattern = r'-\s+(\S+)\s+.*?;'
+        for pin_match in re.finditer(pin_pattern, pins_text, re.DOTALL):
+            pin_block = pin_match.group(0)
             # Check if it has Bonding_layer
-            if "Bonding_layer" in pin_block or "BondingLayer" in pin_block:
+            if "Bonding_layer" in pin_block:
                 pin_name = re.search(r'-\s+(\S+)', pin_block).group(1)
                 
                 # Extract layer coordinates
@@ -204,8 +204,17 @@ def main():
         base_path = str(Path(def_path).with_suffix(''))
         json_path = base_path + ".fp.json"
     
-    # Load cell sizes
-    flow_home = Path(def_path).parent.parent.parent.parent
+    # Load cell sizes - flow_home is the 'flow' directory
+    def_path_obj = Path(def_path).resolve()
+    # Navigate up until we find the 'flow' directory
+    flow_home = def_path_obj
+    while flow_home.name != "flow" and flow_home.parent != flow_home:
+        flow_home = flow_home.parent
+    
+    # If we didn't find 'flow', use the parent of results
+    if flow_home.name != "flow":
+        flow_home = def_path_obj.parent.parent.parent.parent
+    
     cell_sizes = load_cell_sizes(flow_home)
     print(f"Loaded {len(cell_sizes)} cell sizes from LEF files")
     
