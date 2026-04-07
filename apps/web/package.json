@@ -1,0 +1,37 @@
+{
+  "name": "@chip3d/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "clean": "rm -rf .next out"
+  },
+  "dependencies": {
+    "@chip3d/sdk": "workspace:*",
+    "@chip3d/fp-engine": "workspace:*",
+    "@chip3d/thermal-engine": "workspace:*",
+    "@react-three/drei": "latest",
+    "@react-three/fiber": "latest",
+    "lucide-react": "latest",
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "reactflow": "latest",
+    "three": "latest",
+    "zustand": "latest"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.2",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@types/three": "latest",
+    "autoprefixer": "latest",
+    "postcss": "latest",
+    "tailwindcss": "latest",
+    "typescript": "latest"
+  }
+}

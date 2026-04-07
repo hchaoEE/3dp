@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "types": ["node"],
+    "strict": false,
+    "noImplicitAny": false
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../../packages/sdk" },
+    { "path": "../../packages/fp-engine" },
+    { "path": "../../packages/thermal-engine" },
+    { "path": "../../packages/eda-plugins" }
+  ]
+}

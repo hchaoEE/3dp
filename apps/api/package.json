@@ -1,0 +1,33 @@
+{
+  "name": "@chip3d/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "clean": "rm -rf dist",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev"
+  },
+  "dependencies": {
+    "@chip3d/sdk": "workspace:*",
+    "@prisma/client": "^6",
+    "bullmq": "latest",
+    "cors": "latest",
+    "express": "latest",
+    "ioredis": "latest",
+    "uuid": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@types/cors": "latest",
+    "@types/express": "latest",
+    "@types/uuid": "latest",
+    "prisma": "^6",
+    "tsx": "latest",
+    "typescript": "latest"
+  }
+}
