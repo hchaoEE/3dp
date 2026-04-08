@@ -73,8 +73,8 @@ if { [info exists ::env(MIN_ROUTING_LAYER)] && [info exists ::env(MAX_ROUTING_LA
 }
 
 #detailed_route  {*}$all_args
-puts "debug detailed_route -output_drc ./reports/180_180/riscv32i_3d_origin/withoutcluster/5_route_drc.rpt -output_maze ./results/180_180/riscv32i_3d_origin/withoutcluster/maze.log -via_in_pin_bottom_layer Metal1 -via_in_pin_top_layer Metal1 -disable_via_gen -repair_pdn_vias 0 -save_guide_updates -verbose 1 -drc_report_iter_step 5"
-detailed_route -output_drc ./reports/180_180/riscv32i_3d_origin/withoutcluster/5_route_drc.rpt -output_maze ./results/180_180/riscv32i_3d_origin/withoutcluster/maze.log -via_in_pin_bottom_layer Metal1 -via_in_pin_top_layer Metal1 -disable_via_gen -repair_pdn_vias "" -save_guide_updates -verbose 1 -drc_report_iter_step 3
+#puts "debug detailed_route -output_drc ./reports/180_180/riscv32i_3d_origin/withoutcluster/5_route_drc.rpt -output_maze ./results/180_180/riscv32i_3d_origin/withoutcluster/maze.log -via_in_pin_bottom_layer Metal1 -via_in_pin_top_layer Metal1 -disable_via_gen -repair_pdn_vias 0 -save_guide_updates -verbose 1 -drc_report_iter_step 5"
+detailed_route -output_drc $::env(REPORTS_DIR)/5_route_drc.rpt -output_maze $::env(RESULTS_DIR)/maze.log -via_in_pin_bottom_layer Metal1 -via_in_pin_top_layer Metal1 -disable_via_gen -repair_pdn_vias "" -save_guide_updates -verbose 1 -drc_report_iter_step 3
 
 
 # detailed_route -clean_patches -no_pin_access -single_step_dr -save_guide_updates

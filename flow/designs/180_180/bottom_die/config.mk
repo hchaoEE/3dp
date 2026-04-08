@@ -22,11 +22,11 @@ export MACRO_PLACE_CHANNEL = 6 6
 #
 export TNS_END_PERCENT   = 100
 export MIN_ROUTING_LAYER = Metal1
-export MAX_ROUTING_LAYER = Bonding_layer
+export MAX_ROUTING_LAYER = Metal4
 
-export IO_CONSTRAINTS = ./designs/$(PLATFORM)/$(DESIGN_NICKNAME)/io.tcl
+#export IO_CONSTRAINTS = ./designs/$(PLATFORM)/$(DESIGN_NICKNAME)/io.tcl
 export IS_CHIP = 1
-export MOTHER_PIN_GEN = ./designs/$(PLATFORM)/$(DESIGN_NICKNAME)/pad_gen.tcl
+#export MOTHER_PIN_GEN = ./designs/$(PLATFORM)/$(DESIGN_NICKNAME)/pad_gen.tcl
 export TSV_DELAY = 0.03
 export PDN_TCL = ./designs/$(PLATFORM)/$(DESIGN_NICKNAME)/pdn.tcl
 

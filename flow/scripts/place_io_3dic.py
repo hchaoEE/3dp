@@ -258,6 +258,178 @@ def get_interconnect_signals(bottom_pins: Dict[str, Pin], top_pins: Dict[str, Pi
     return sorted(list(bottom_names & top_names))
 
 
+def get_all_pins(bottom_pins: Dict[str, Pin], top_pins: Dict[str, Pin]) -> Tuple[set, set]:
+    """Get all pin names from both dies."""
+    bottom_names = set(bottom_pins.keys())
+    top_names = set(top_pins.keys())
+    return bottom_names, top_names
+
+
+def get_non_interconnect_signals(bottom_pins: Dict[str, Pin], top_pins: Dict[str, Pin]) -> Tuple[List[str], List[str]]:
+    """
+    Find signal names that exist in only one die (non-interconnect signals).
+
+    Returns:
+        Tuple of (bottom_only_signals, top_only_signals)
+    """
+    bottom_names = set(bottom_pins.keys())
+    top_names = set(top_pins.keys())
+
+    bottom_only = sorted(list(bottom_names - top_names))
+    top_only = sorted(list(top_names - bottom_names))
+
+    return bottom_only, top_only
+
+
+def get_edge_for_signal(signal: str) -> str:
+    """Determine edge placement based on signal name pattern.
+
+    Args:
+        signal: Signal name
+
+    Returns:
+        Edge name: "top", "bottom", "left", or "right"
+    """
+    # Core control signals -> top edge
+    if re.match(r'(reset|instr|valid|memwrite|suspend|ready|pc).*', signal):
+        return "top"
+    # writedata signals -> top edge
+    elif re.match(r'writedata.*', signal):
+        return "top"
+    # dataadr signals -> bottom edge
+    elif re.match(r'dataadr.*', signal):
+        return "bottom"
+    # mem signals -> left edge
+    elif re.match(r'(ce_mem|we_mem).*', signal):
+        return "left"
+    # inter_dmem signals -> right edge
+    elif re.match(r'inter_dmem.*', signal):
+        return "right"
+    # Default -> left edge
+    else:
+        return "left"
+
+
+def generate_edge_placement_for_signals(
+    signals: List[str],
+    pins: Dict[str, Pin],
+    die_width: int,
+    die_height: int,
+    config: Dict,
+    edge: str = "bottom",
+    random_seed: Optional[int] = None
+) -> Dict[str, Tuple[int, int]]:
+    """
+    Generate placement for non-interconnect signals on a specific edge.
+
+    Args:
+        signals: List of signal names to place
+        pins: Dictionary of all pins
+        die_width: Die width in DEF units
+        die_height: Die height in DEF units
+        config: Placement configuration
+        edge: Edge to place pins on (top, bottom, left, right)
+        random_seed: Optional random seed
+
+    Returns:
+        Dict mapping signal name to (x, y) position
+    """
+    if random_seed is not None:
+        random.seed(random_seed)
+
+    if not signals:
+        return {}
+
+    # Configuration
+    # Margin should be at least 40um (20um core-to-die spacing + 20um pin margin)
+    margin_um = config.get("margin_um", 40)
+    pitch_um = config.get("pitch_um", 10)
+    min_spacing_um = config.get("min_spacing_um", 5)
+
+    # Convert to DEF units (assuming 2000 units per micron)
+    units_per_micron = 2000
+    margin = int(margin_um * units_per_micron)
+    pitch = int(pitch_um * units_per_micron)
+    min_spacing = int(min_spacing_um * units_per_micron)
+
+    placements = {}
+    placed_positions = []  # List of (x, y, pin_size)
+
+    # Default pin size in DEF units (0.44 microns * 2000 = 880)
+    default_pin_size = (880, 2560)
+
+    # Generate available positions on the specified edge
+    available_positions = []
+
+    if edge == "top":
+        y = die_height - margin
+        for x in range(margin, die_width - margin, pitch):
+            available_positions.append((x, y))
+    elif edge == "bottom":
+        y = margin
+        for x in range(margin, die_width - margin, pitch):
+            available_positions.append((x, y))
+    elif edge == "left":
+        x = margin
+        for y in range(margin, die_height - margin, pitch):
+            available_positions.append((x, y))
+    elif edge == "right":
+        x = die_width - margin
+        for y in range(margin, die_height - margin, pitch):
+            available_positions.append((x, y))
+
+    # Shuffle for randomness
+    random.shuffle(available_positions)
+
+    # Place signals with strict spacing check (check for actual overlap)
+    # Note: place_pin uses center coordinates, so we need to account for pin_size/2
+    for sig in signals:
+        pin = pins.get(sig)
+        if not pin:
+            continue
+
+        # Get pin size (default to 2.0 x 2.0 microns)
+        pin_width, pin_height = default_pin_size
+        pin_half_w = pin_width // 2
+        pin_half_h = pin_height // 2
+
+        placed = False
+        for pos in available_positions[:]:
+            x, y = pos
+            # Check for overlap with existing pins
+            overlap = False
+            for placed_x, placed_y, placed_w, placed_h in placed_positions:
+                # Check if rectangles overlap
+                # Pin 1: center at (x, y), extends from (x - half_w, y - half_h) to (x + half_w, y + half_h)
+                # Pin 2: center at (placed_x, placed_y), extends similarly
+                x1_min, x1_max = x - pin_half_w, x + pin_half_w
+                y1_min, y1_max = y - pin_half_h, y + pin_half_h
+                x2_min, x2_max = placed_x - placed_w // 2, placed_x + placed_w // 2
+                y2_min, y2_max = placed_y - placed_h // 2, placed_y + placed_h // 2
+
+                # Check for overlap with margin
+                margin_def = min_spacing
+                if (x1_max + margin_def > x2_min and x1_min - margin_def < x2_max and
+                    y1_max + margin_def > y2_min and y1_min - margin_def < y2_max):
+                    overlap = True
+                    break
+
+            if not overlap:
+                placements[sig] = pos
+                placed_positions.append((x, y, pin_width, pin_height))
+                available_positions.remove(pos)
+                placed = True
+                break
+
+        if not placed and available_positions:
+            # Fallback: use last available position
+            pos = available_positions.pop()
+            placements[sig] = pos
+            placed_positions.append((pos[0], pos[1], pin_width, pin_height))
+
+    return placements
+
+
 def group_signals_by_pattern(signals: List[str], patterns: Dict[str, str]) -> Dict[str, List[str]]:
     """Group signals by regex pattern.
 
@@ -303,7 +475,8 @@ def mirror_position_for_top_die(x: int, y: int, die_width: int) -> Tuple[int, in
 def check_pin_spacing(
     pos: Tuple[int, int],
     placed_positions: Dict[str, Tuple[int, int]],
-    min_spacing: int
+    min_spacing: int,
+    pin_size: Tuple[int, int] = (880, 2560)
 ) -> bool:
     """Check if position has enough spacing from all placed pins.
 
@@ -311,18 +484,35 @@ def check_pin_spacing(
         pos: Position to check (x, y)
         placed_positions: Dict of already placed pins {name: (x, y)}
         min_spacing: Minimum spacing required in DEF units
+        pin_size: (width, height) of pins in DEF units (default 4000x4000 = 2x2 um)
 
     Returns:
         True if position violates spacing constraint (too close to another pin)
     """
     x1, y1 = pos
+    pin_width, pin_height = pin_size
 
     for other_name, other_pos in placed_positions.items():
         x2, y2 = other_pos
-        # Calculate Manhattan distance between pin centers
-        distance = abs(x1 - x2) + abs(y1 - y2)
-        # For edge placement, check if on same edge and distance
-        if distance < min_spacing:
+
+        # Calculate bounding boxes for both pins (including spacing margin)
+        # Pin 1: from (x1 - pin_width/2, y1 - pin_height/2) to (x1 + pin_width/2, y1 + pin_height/2)
+        # Pin 2: from (x2 - pin_width/2, y2 - pin_height/2) to (x2 + pin_width/2, y2 + pin_height/2)
+        # With additional min_spacing margin
+
+        x1_min = x1 - pin_width // 2 - min_spacing
+        x1_max = x1 + pin_width // 2 + min_spacing
+        y1_min = y1 - pin_height // 2 - min_spacing
+        y1_max = y1 + pin_height // 2 + min_spacing
+
+        x2_min = x2 - pin_width // 2 - min_spacing
+        x2_max = x2 + pin_width // 2 + min_spacing
+        y2_min = y2 - pin_height // 2 - min_spacing
+        y2_max = y2 + pin_height // 2 + min_spacing
+
+        # Check for overlap (if bounding boxes overlap, pins are too close)
+        if (x1_max > x2_min and x1_min < x2_max and
+            y1_max > y2_min and y1_min < y2_max):
             return True
 
     return False
@@ -335,13 +525,13 @@ def generate_array_placement(
     config: Dict,
     random_seed: Optional[int] = None
 ) -> Dict[str, Tuple[int, int]]:
-    """Generate array placement for signals within edge regions.
+    """Generate array placement for signals anywhere on the die.
 
     Args:
         signals: List of signal names to place
         die_width: Die width in DEF units
         die_height: Die height in DEF units
-        config: Placement configuration with signal groups and regions
+        config: Placement configuration
         random_seed: Optional random seed for reproducibility
 
     Returns:
@@ -350,108 +540,85 @@ def generate_array_placement(
     if random_seed is not None:
         random.seed(random_seed)
 
-    # Default signal group patterns (from io.tcl)
-    default_patterns = {
-        "writedata": r"writedata.*",
-        "dataadr": r"dataadr.*",
-        "mem": r"(ce_mem|we_mem).*",
-        "inter_dmem": r"inter_dmem.*",
-        "core_ctrl": r"(reset|instr|valid|memwrite|suspend|ready|pc).*",
-    }
-
-    patterns = config.get("signal_patterns", default_patterns)
-
-    # Group signals
-    signal_groups = group_signals_by_pattern(signals, patterns)
-
-    # Default region configuration (in um, will convert to DEF units)
-    # Region format: (x1_um, y1_um, x2_um, y2_um, edge)
-    default_regions = {
-        "writedata": {"edge": "top", "region_um": (20, 20, 1180, 40)},
-        "dataadr": {"edge": "bottom", "region_um": (20, 960, 1180, 980)},
-        "mem": {"edge": "left", "region_um": (20, 20, 40, 980)},
-        "inter_dmem": {"edge": "right", "region_um": (1100, 20, 1180, 980)},
-        "core_ctrl": {"edge": "top", "region_um": (20, 20, 1180, 400)},
-    }
-
-    regions = config.get("regions", default_regions)
-    pitch_um = config.get("pitch_um", 10)
-    margin_um = config.get("margin_um", 20)
-
-    # Minimum spacing between pins (configurable, default 5um)
+    # Configuration
+    margin_um = config.get("margin_um", 40)
     min_spacing_um = config.get("min_spacing_um", 5)
 
     # Convert to DEF units (assuming 2000 units per micron)
     units_per_micron = 2000
-    pitch = pitch_um * units_per_micron
     margin = margin_um * units_per_micron
     min_spacing = min_spacing_um * units_per_micron
 
+    # Default pin size in DEF units (0.44 x 1.28 microns * 2000)
+    default_pin_size = (880, 2560)
+
+    # Bonding_layer track pitch from DEF: 1800 DEF units (0.9um)
+    track_pitch = 1800
+    # Track offset from DEF: 1800 DEF units
+    track_offset = 1800
+
     placements = {}
 
-    for group_name, group_signals in signal_groups.items():
-        if not group_signals:
+    # Handle special signals with fixed positions (in microns, will convert to DEF units)
+    # ready -> (20, 20), valid -> (20, 25)
+    special_positions = {}
+    units_per_micron = 2000
+    for sig in signals:
+        if re.match(r'ready$', sig):
+            special_positions[sig] = (int(20 * units_per_micron), int(20 * units_per_micron))
+        elif re.match(r'valid$', sig):
+            special_positions[sig] = (int(20 * units_per_micron), int(25 * units_per_micron))
+
+    # Place special signals first
+    for sig, pos in special_positions.items():
+        placements[sig] = pos
+        print(f"  Placed {sig} at fixed position ({pos[0]/units_per_micron}, {pos[1]/units_per_micron})")
+
+    # Generate all available positions aligned to Bonding_layer tracks
+    available_positions = []
+    for x in range(track_offset, die_width - margin, track_pitch):
+        for y in range(track_offset, die_height - margin, track_pitch):
+            available_positions.append((x, y))
+
+    # Remove positions that are too close to special positions
+    for special_pos in special_positions.values():
+        available_positions = [
+            pos for pos in available_positions
+            if not check_pin_spacing(pos, {sig: special_pos for sig in special_positions}, min_spacing, default_pin_size)
+        ]
+
+    # Shuffle for randomness
+    random.shuffle(available_positions)
+
+    # Place remaining signals with spacing check
+    for sig in sorted(signals):
+        # Skip if already placed (special signals)
+        if sig in placements:
             continue
 
-        region_config = regions.get(group_name, regions.get("writedata"))
-        edge = region_config["edge"]
-        x1, y1, x2, y2 = region_config["region_um"]
+        placed = False
+        for pos in available_positions[:]:
+            if not check_pin_spacing(pos, placements, min_spacing, default_pin_size):
+                placements[sig] = pos
+                available_positions.remove(pos)
+                placed = True
+                break
 
-        # Convert to DEF units
-        x1_def = x1 * units_per_micron
-        y1_def = y1 * units_per_micron
-        x2_def = x2 * units_per_micron
-        y2_def = y2 * units_per_micron
-
-        # Generate available positions based on edge
-        available_positions = []
-
-        if edge == "top":
-            for x in range(x1_def, x2_def, pitch):
-                available_positions.append((x, y1_def))
-        elif edge == "bottom":
-            for x in range(x1_def, x2_def, pitch):
-                available_positions.append((x, y1_def))
-        elif edge == "left":
-            for y in range(y1_def, y2_def, pitch):
-                available_positions.append((x1_def, y))
-        elif edge == "right":
-            for y in range(y1_def, y2_def, pitch):
-                available_positions.append((x1_def, y))
-
-        # Randomly assign positions with spacing constraint
-        random.shuffle(available_positions)
-
-        group_placements = {}
-        for sig in sorted(group_signals):
-            placed = False
-            for pos in available_positions:
-                # Check spacing against all placed pins (including other groups)
-                if not check_pin_spacing(pos, placements, min_spacing):
-                    group_placements[sig] = pos
-                    placements[sig] = pos
-                    available_positions.remove(pos)
-                    placed = True
+        if not placed:
+            # Fallback: generate new position with systematic search on tracks
+            for x in range(track_offset, die_width - margin, track_pitch):
+                for y in range(track_offset, die_height - margin, track_pitch):
+                    test_pos = (x, y)
+                    if test_pos not in placements.values():
+                        if not check_pin_spacing(test_pos, placements, min_spacing, default_pin_size):
+                            placements[sig] = test_pos
+                            placed = True
+                            break
+                if placed:
                     break
 
             if not placed:
-                # Not enough positions with spacing constraint, use last available with offset
-                pos = available_positions[-1] if available_positions else (margin, margin)
-                # Find a valid position with offset
-                offset = 0
-                while not placed:
-                    test_pos = pos
-                    if edge in ["top", "bottom"]:
-                        test_pos = (pos[0] + offset, pos[1])
-                    else:
-                        test_pos = (pos[0], pos[1] + offset)
-
-                    if not check_pin_spacing(test_pos, placements, min_spacing):
-                        group_placements[sig] = test_pos
-                        placements[sig] = test_pos
-                        placed = True
-                    else:
-                        offset += pitch
+                print(f"Warning: Could not place signal {sig}")
 
     return placements
 
@@ -591,8 +758,8 @@ def generate_optimized_placement(
     min_spacing_um = config.get("min_spacing_um", 5)
     min_spacing = min_spacing_um * 2000  # Convert to DEF units
 
-    # Pin sizes (from existing DEF files)
-    bottom_pin_size = (4000, 4000)  # 2um x 2um
+    # Pin sizes - both dies use 0.44um x 1.28um
+    bottom_pin_size = (880, 2560)  # 0.44um x 1.28um
     top_pin_size = (880, 2560)  # 0.44um x 1.28um
 
     # Sort signals by number of connections (more connections = higher priority)
@@ -647,7 +814,8 @@ def write_tcl_commands(
     output_path: str,
     die_name: str,
     pin_size: Tuple[int, int],
-    layer: str = "Bonding_layer"
+    layer: str = "Bonding_layer",
+    units: int = 2000
 ):
     """Write TCL commands for pin placement.
 
@@ -657,19 +825,28 @@ def write_tcl_commands(
         die_name: Die name for comments
         pin_size: (width, height) in DEF units
         layer: Layer name for placement
+        units: DEF units per micron (default 2000)
     """
     with open(output_path, 'w') as f:
         f.write(f"# IO Placement for {die_name}\n")
         f.write(f"# Generated by place_io_3dic.py\n")
-        f.write(f"# Total pins: {len(placements)}\n\n")
+        f.write(f"# Total pins: {len(placements)}\n")
+        f.write(f"# Units: {units} DEF units per micron\n\n")
 
         f.write(f"source $::env(SCRIPTS_DIR)/util.tcl\n\n")
 
         for pin_name, (x, y) in sorted(placements.items()):
+            # Convert DEF units to microns for TCL command
+            # Round to nearest 5um multiple
+            x_microns = round((x / units) / 5) * 5
+            y_microns = round((y / units) / 5) * 5
+            width_microns = pin_size[0] / units
+            height_microns = pin_size[1] / units
+
             f.write(f"place_pin -layer {layer} ")
-            f.write(f"-pin_size {{{pin_size[0]} {pin_size[1]}}} ")
+            f.write(f"-pin_size {{{width_microns} {height_microns}}} ")
             f.write(f"-pin_name {pin_name} ")
-            f.write(f"-location {{{x} {y}}}\n")
+            f.write(f"-location {{{x_microns} {y_microns}}}\n")
 
         f.write("\n")
 
@@ -757,7 +934,11 @@ def main():
     parser.add_argument(
         "--output_dir",
         required=True,
-        help="Output directory for TCL and location files"
+        help="Output directory for bottom die TCL and location files"
+    )
+    parser.add_argument(
+        "--top_output_dir",
+        help="Output directory for top die TCL files (default: same as output_dir)"
     )
     parser.add_argument(
         "--config",
@@ -804,9 +985,14 @@ def main():
     print(f"  Die area: {top_def.die_area}")
     print(f"  Pins: {len(top_def.pins)}")
 
-    # Find interconnect signals
+    # Find interconnect signals (signals present in both dies)
     signals = get_interconnect_signals(bottom_def.pins, top_def.pins)
     print(f"Interconnect signals: {len(signals)}")
+
+    # Find non-interconnect signals (signals present in only one die)
+    bottom_only_signals, top_only_signals = get_non_interconnect_signals(bottom_def.pins, top_def.pins)
+    print(f"Bottom-only signals: {len(bottom_only_signals)}")
+    print(f"Top-only signals: {len(top_only_signals)}")
 
     die_width = bottom_def.die_area[2]
     die_height = bottom_def.die_area[3]
@@ -823,14 +1009,28 @@ def main():
     })
 
     if args.method == "array":
-        print("Running array placement...")
+        # Place all bottom die signals (both interconnect and non-interconnect)
+        all_bottom_signals = signals + bottom_only_signals
+        print(f"Running array placement for {len(all_bottom_signals)} bottom signals...")
         bottom_placements = generate_array_placement(
-            signals, die_width, die_height, config, args.seed
+            all_bottom_signals, die_width, die_height, config, args.seed
         )
-        top_placements = {
-            sig: mirror_position_for_top_die(pos[0], pos[1], die_width)
-            for sig, pos in bottom_placements.items()
-        }
+
+        # Mirror positions for top die (only for interconnect signals)
+        top_placements = {}
+        for sig in signals:
+            if sig in bottom_placements:
+                pos = bottom_placements[sig]
+                top_placements[sig] = mirror_position_for_top_die(pos[0], pos[1], die_width)
+
+        # Place top-only signals if any
+        if top_only_signals:
+            print(f"Placing {len(top_only_signals)} top-only signals...")
+            top_only_placements = generate_array_placement(
+                top_only_signals, die_width, die_height, config, args.seed + 1
+            )
+            for sig, pos in top_only_placements.items():
+                top_placements[sig] = mirror_position_for_top_die(pos[0], pos[1], die_width)
 
     elif args.method == "optimize":
         print("Running wire length optimization...")
@@ -838,25 +1038,96 @@ def main():
             signals, bottom_def, top_def, config
         )
 
-    print(f"Placed {len(bottom_placements)} pins")
+        # For optimize method, also place non-interconnect signals by edge
+        print("Placing non-interconnect signals by edge...")
 
-    # Pin sizes
+        # Group bottom-only signals by edge
+        bottom_by_edge = {"top": [], "bottom": [], "left": [], "right": []}
+        for sig in bottom_only_signals:
+            edge = get_edge_for_signal(sig)
+            bottom_by_edge[edge].append(sig)
+
+        # Place bottom-only signals by edge
+        for edge, sig_list in bottom_by_edge.items():
+            if sig_list:
+                print(f"  Placing {len(sig_list)} bottom signals on {edge} edge...")
+                placements = generate_edge_placement_for_signals(
+                    sig_list, bottom_def.pins, die_width, die_height,
+                    config, edge=edge, random_seed=args.seed
+                )
+                bottom_placements.update(placements)
+
+        # Group top-only signals by edge
+        top_by_edge = {"top": [], "bottom": [], "left": [], "right": []}
+        for sig in top_only_signals:
+            edge = get_edge_for_signal(sig)
+            top_by_edge[edge].append(sig)
+
+        # Place top-only signals by edge
+        for edge, sig_list in top_by_edge.items():
+            if sig_list:
+                print(f"  Placing {len(sig_list)} top signals on {edge} edge...")
+                placements = generate_edge_placement_for_signals(
+                    sig_list, top_def.pins, die_width, die_height,
+                    config, edge=edge, random_seed=args.seed
+                )
+                for sig, pos in placements.items():
+                    top_placements[sig] = mirror_position_for_top_die(pos[0], pos[1], die_width)
+
+    # Check for any unplaced pins and place them
+    bottom_all_pins, top_all_pins = get_all_pins(bottom_def.pins, top_def.pins)
+
+    # Find unplaced pins in bottom die
+    bottom_unplaced = bottom_all_pins - set(bottom_placements.keys())
+    if bottom_unplaced:
+        print(f"Placing {len(bottom_unplaced)} additional bottom pins...")
+        additional_bottom = generate_edge_placement_for_signals(
+            sorted(list(bottom_unplaced)), bottom_def.pins, die_width, die_height,
+            config, edge="bottom", random_seed=args.seed + 1
+        )
+        bottom_placements.update(additional_bottom)
+
+    # Find unplaced pins in top die
+    top_unplaced = top_all_pins - set(top_placements.keys())
+    if top_unplaced:
+        print(f"Placing {len(top_unplaced)} additional top pins...")
+        additional_top = generate_edge_placement_for_signals(
+            sorted(list(top_unplaced)), top_def.pins, die_width, die_height,
+            config, edge="top", random_seed=args.seed + 1
+        )
+        # Mirror positions for top die
+        for sig, pos in additional_top.items():
+            top_placements[sig] = mirror_position_for_top_die(pos[0], pos[1], die_width)
+
+    print(f"Total placed pins - bottom: {len(bottom_placements)}, top: {len(top_placements)}")
+
+    # Pin sizes (in DEF units)
+    # bottom_die uses 2um x 2um (4000 x 4000 DEF units)
+    # top_die uses 0.44um x 1.28um (880 x 2560 DEF units)
     bottom_pin_size = config.get("bottom_pin_size", (4000, 4000))
     top_pin_size = config.get("top_pin_size", (880, 2560))
 
-    # Write TCL files
+    # Get units from DEF file (default 2000)
+    units = bottom_def.units
+
+    # Determine top output directory
+    top_output_dir = args.top_output_dir if args.top_output_dir else args.output_dir
+
+    # Write TCL files (coordinates will be converted to microns)
     bottom_tcl_path = os.path.join(args.output_dir, "io_placement_bottom.tcl")
-    top_tcl_path = os.path.join(args.output_dir, "io_placement_top.tcl")
+    top_tcl_path = os.path.join(top_output_dir, "io_placement_top.tcl")
 
     write_tcl_commands(
         bottom_placements, bottom_tcl_path,
-        "bottom_die", bottom_pin_size
+        "bottom_die", bottom_pin_size,
+        units=units
     )
     print(f"Written: {bottom_tcl_path}")
 
     write_tcl_commands(
         top_placements, top_tcl_path,
-        "top_die", top_pin_size
+        "top_die", top_pin_size,
+        units=units
     )
     print(f"Written: {top_tcl_path}")
 

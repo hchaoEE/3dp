@@ -28,9 +28,8 @@ export GPL_ROUTABILITY_DRIVEN = 1
 export IS_CHIP = 1
 
 export MIN_ROUTING_LAYER = Metal1
-export MAX_ROUTING_LAYER = Metal3
+export MAX_ROUTING_LAYER = Bonding_layer
 
-export MOTHER = riscv32i_3d_origin
+export MOTHER = top_die
 export MOTHER_PDK = 180_180
-
-export IO_CONSTRAINTS = ./designs/$(MOTHER_PLATFORM)/$(DESIGN_NICKNAME)/pad_placer.tcl
+#export IO_CONSTRAINTS = ./designs/$(MOTHER_PLATFORM)/$(DESIGN_NICKNAME)/pad_placer.tcl

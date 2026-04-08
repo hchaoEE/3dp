@@ -70,6 +70,55 @@ class FlowRunner:
                 print(f"[{prefix}] {line.rstrip()}")
 
 
+def run_python_script(
+    script_path: str,
+    args: list,
+    die_name: str,
+    stop_event: threading.Event = None
+) -> RunResult:
+    """
+    Run a Python script with arguments.
+
+    Args:
+        script_path: Path to Python script
+        args: List of arguments to pass to script
+        die_name: Name of the die for logging
+        stop_event: Event to check for early termination
+
+    Returns:
+        RunResult with exit code and failure info
+    """
+    # Check for early termination
+    if stop_event and stop_event.is_set():
+        print(f"[{die_name}] Stopped due to other die failure")
+        return RunResult(name=die_name, exit_code=-1, failed_at="early_stop")
+
+    cmd = ["python3", script_path] + args
+    print(f"[{die_name}] Running: {' '.join(cmd)}")
+
+    process = subprocess.Popen(
+        cmd,
+        cwd=FLOW_HOME,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1
+    )
+
+    # Stream output
+    if process.stdout:
+        for line in process.stdout:
+            print(f"[{die_name}] {line.rstrip()}")
+
+    exit_code = process.wait()
+
+    if exit_code != 0:
+        print(f"[{die_name}] Python script failed: {script_path}")
+        return RunResult(name=die_name, exit_code=exit_code, failed_at=f"python:{script_path}")
+
+    return RunResult(name=die_name, exit_code=0)
+
+
 def run_make_targets(runner: FlowRunner, targets: list, die_name: str,
                      signal_event: threading.Event = None,
                      signal_after: str = None,
@@ -175,25 +224,112 @@ def get_full_flow_targets() -> list:
     )
 
 
-def run_bottom_die(signal_event: threading.Event, stop_event: threading.Event) -> RunResult:
+def get_def_path(die_name: str) -> str:
+    """Get the path to the DEF file for a die."""
+    return str(FLOW_HOME / "results" / "180_180" / die_name / FLOW_VARIANT / "3_1_place_gp_skip_io.def")
+
+
+def run_io_placement_2d(
+    die_name: str,
+    def_file: str,
+    output_dir: str,
+    stop_event: threading.Event = None
+) -> RunResult:
     """
-    Run bottom_die flow completely, signaling 3_2 completion.
+    Run place_io_2d.py to generate 2D IO placement TCL script.
 
     Args:
-        signal_event: Event to signal after 3_2 completion
+        die_name: Name of the die for logging (bottom_die or top_die)
+        def_file: Path to DEF file (3_1_place_gp_skip_io.def)
+        output_dir: Output directory for generated TCL files
         stop_event: Event to check for early termination
 
     Returns:
         RunResult with exit code and failure info
     """
-    runner = FlowRunner("bottom_die", BOTTOM_CONFIG)
-    print(f"[bottom_die] Starting full flow...")
+    script_path = str(FLOW_HOME / "scripts" / "place_io_2d.py")
+
+    # Extract short die name (bottom or top)
+    short_name = "bottom" if "bottom" in die_name else "top"
+
+    args = [
+        "--def_file", def_file,
+        "--output_dir", output_dir,
+        "--die_name", short_name,
+        "--seed", "42",
+        "--pitch_um", "10.0",
+        "--margin_um", "20.0",
+        "--min_spacing_um", "5.0"
+    ]
+
+    return run_python_script(script_path, args, die_name, stop_event)
+
+
+def run_io_placement_3d(
+    die_name: str,
+    bottom_def: str,
+    top_def: str,
+    output_dir: str,
+    top_output_dir: str = None,
+    stop_event: threading.Event = None
+) -> RunResult:
+    """
+    Run place_io_3dic.py to generate 3D IO placement TCL scripts.
+
+    Args:
+        die_name: Name of the die for logging
+        bottom_def: Path to bottom die DEF file
+        top_def: Path to top die DEF file
+        output_dir: Output directory for bottom die generated TCL files
+        top_output_dir: Output directory for top die generated TCL files
+        stop_event: Event to check for early termination
+
+    Returns:
+        RunResult with exit code and failure info
+    """
+    script_path = str(FLOW_HOME / "scripts" / "place_io_3dic.py")
+
+    args = [
+        "--method", "array",
+        "--bottom_def", bottom_def,
+        "--top_def", top_def,
+        "--output_dir", output_dir,
+        "--seed", "42",
+        "--min_spacing_um", "5.0"
+    ]
+
+    if top_output_dir:
+        args.extend(["--top_output_dir", top_output_dir])
+
+    return run_python_script(script_path, args, die_name, stop_event)
+
+
+def run_die_phase1(
+    die_name: str,
+    config_path: str,
+    completed_event: threading.Event,
+    stop_event: threading.Event
+) -> RunResult:
+    """
+    Run Phase 1: synthesis -> floorplan -> 3_1_place_gp_skip_io.
+
+    Args:
+        die_name: Name of the die (bottom_die or top_die)
+        config_path: Path to design config
+        completed_event: Event to signal after 3_1 completion
+        stop_event: Event to check for early termination
+
+    Returns:
+        RunResult with exit code and failure info
+    """
+    runner = FlowRunner(die_name, config_path)
+    print(f"[{die_name}] Starting Phase 1 (synth -> floorplan -> 3_1)...")
 
     targets = get_flow_targets()
 
     # Run synthesis
     result = run_make_targets(
-        runner, targets["synth"], "bottom_die",
+        runner, targets["synth"], die_name,
         stop_event=stop_event
     )
     if result.exit_code != 0:
@@ -202,110 +338,75 @@ def run_bottom_die(signal_event: threading.Event, stop_event: threading.Event) -
 
     # Run floorplan
     result = run_make_targets(
-        runner, targets["floorplan"], "bottom_die",
+        runner, targets["floorplan"], die_name,
         stop_event=stop_event
     )
     if result.exit_code != 0:
         stop_event.set()
         return result
 
-    # Run place before 3_2
+    # Run 3_1_place_gp_skip_io
     result = run_make_targets(
-        runner, targets["place_before_3_2"], "bottom_die",
+        runner, targets["place_before_3_2"], die_name,
+        signal_event=completed_event,
+        signal_after="do-3_1_place_gp_skip_io",
         stop_event=stop_event
     )
     if result.exit_code != 0:
         stop_event.set()
         return result
 
-    # Run 3_2 and signal completion
-    result = run_make_targets(
-        runner, targets["place_3_2"], "bottom_die",
-        signal_event=signal_event,
-        signal_after="do-3_2_place_iop",
-        stop_event=stop_event
-    )
-    if result.exit_code != 0:
-        # Signal failure so top_die doesn't wait forever
-        signal_event.set()
-        stop_event.set()
-        return result
-
-    # Run remaining steps
-    remaining = targets["place_after_3_2"] + targets["cts"] + targets["route"] + targets["finish"]
-    result = run_make_targets(runner, remaining, "bottom_die", stop_event=stop_event)
-
-    if result.exit_code == 0:
-        print(f"[bottom_die] Flow completed successfully!")
-    else:
-        stop_event.set()
+    print(f"[{die_name}] Phase 1 completed (3_1_place_gp_skip_io done)")
     return result
 
 
-def run_top_die(signal_event: threading.Event, stop_event: threading.Event) -> RunResult:
+def run_die_phase2(
+    die_name: str,
+    config_path: str,
+    stop_event: threading.Event
+) -> RunResult:
     """
-    Run top_die flow, waiting for bottom_die 3_2 completion before 3_2.
+    Run Phase 2: 3_2_place_iop -> remaining steps.
 
     Args:
-        signal_event: Event to wait for bottom 3_2 completion
+        die_name: Name of the die (bottom_die or top_die)
+        config_path: Path to design config
         stop_event: Event to check for early termination
 
     Returns:
         RunResult with exit code and failure info
     """
-    runner = FlowRunner("top_die", TOP_CONFIG)
-    print(f"[top_die] Starting full flow...")
+    runner = FlowRunner(die_name, config_path)
+    print(f"[{die_name}] Starting Phase 2 (3_2_place_iop -> finish)...")
 
     targets = get_flow_targets()
 
-    # Run synthesis
+    # Run 3_2_place_iop
     result = run_make_targets(
-        runner, targets["synth"], "top_die",
+        runner, targets["place_3_2"], die_name,
         stop_event=stop_event
     )
     if result.exit_code != 0:
         stop_event.set()
         return result
 
-    # Run floorplan and place before 3_2
-    phase1 = targets["floorplan"] + targets["place_before_3_2"]
-    result = run_make_targets(runner, phase1, "top_die", stop_event=stop_event)
-    if result.exit_code != 0:
-        stop_event.set()
-        return result
-
-    # Wait for bottom_die's 3_2 completion
-    print(f"[top_die] Reached 3_1. Waiting for bottom_die's 3_2_place_iop...")
-    if not signal_event.wait(timeout=DEPENDENCY_TIMEOUT):
-        print(f"[top_die] Timeout waiting for bottom_die 3_2_place_iop!")
-        stop_event.set()
-        return RunResult(name="top_die", exit_code=-1, failed_at="dependency_timeout")
-
-    # Check if bottom failed
-    if stop_event.is_set():
-        print(f"[top_die] bottom_die failed, stopping...")
-        return RunResult(name="top_die", exit_code=-1, failed_at="dependency_failed")
-
-    print(f"[top_die] bottom_die's 3_2_place_iop completed. Continuing...")
-
-    # Run 3_2 for top_die
-    result = run_make_targets(runner, targets["place_3_2"], "top_die", stop_event=stop_event)
-    if result.exit_code != 0:
-        return result
-
     # Run remaining steps
     remaining = targets["place_after_3_2"] + targets["cts"] + targets["route"] + targets["finish"]
-    result = run_make_targets(runner, remaining, "top_die", stop_event=stop_event)
+    result = run_make_targets(runner, remaining, die_name, stop_event=stop_event)
 
     if result.exit_code == 0:
-        print(f"[top_die] Flow completed successfully!")
+        print(f"[{die_name}] Phase 2 completed successfully!")
+    else:
+        stop_event.set()
+
     return result
 
 
 def run_parallel() -> int:
-    """Run both flows in parallel with dependency management."""
+    """Run both flows in parallel with 3-phase execution."""
     # Create events for this run
-    bottom_3_2_completed = threading.Event()
+    bottom_3_1_completed = threading.Event()
+    top_3_1_completed = threading.Event()
     stop_event = threading.Event()
 
     print("=" * 60)
@@ -313,36 +414,107 @@ def run_parallel() -> int:
     print("=" * 60)
     print(f"bottom_die config: {BOTTOM_CONFIG}")
     print(f"top_die config: {TOP_CONFIG}")
-    print(f"Dependency: top_die 3_2_place_iop waits for bottom_die 3_2_place_iop")
+    print(f"Flow: Phase1 (3_1) -> Python IO placement -> Phase2 (3_2 -> finish)")
     print(f"Timeout: {DEPENDENCY_TIMEOUT}s")
     print("=" * 60)
 
-    # Results storage
-    results = {"bottom": None, "top": None}
+    # =========================================================================
+    # Phase 1: Run both dies up to 3_1_place_gp_skip_io concurrently
+    # =========================================================================
+    print("\n[Phase 1] Running both dies up to 3_1_place_gp_skip_io...")
+    print("-" * 60)
 
-    def bottom_thread_func():
-        results["bottom"] = run_bottom_die(bottom_3_2_completed, stop_event)
+    phase1_results = {"bottom": None, "top": None}
 
-    def top_thread_func():
-        results["top"] = run_top_die(bottom_3_2_completed, stop_event)
+    def bottom_phase1_thread():
+        phase1_results["bottom"] = run_die_phase1(
+            "bottom_die", BOTTOM_CONFIG, bottom_3_1_completed, stop_event
+        )
 
-    # Create and start threads
-    bottom_thread = threading.Thread(target=bottom_thread_func)
-    top_thread = threading.Thread(target=top_thread_func)
+    def top_phase1_thread():
+        phase1_results["top"] = run_die_phase1(
+            "top_die", TOP_CONFIG, top_3_1_completed, stop_event
+        )
+
+    # Start Phase 1 threads
+    bottom_thread = threading.Thread(target=bottom_phase1_thread)
+    top_thread = threading.Thread(target=top_phase1_thread)
 
     bottom_thread.start()
     top_thread.start()
 
-    # Wait for both to complete
+    # Wait for both to complete Phase 1
     bottom_thread.join()
     top_thread.join()
 
-    # Print results
-    print("=" * 60)
+    # Check Phase 1 results
+    if phase1_results["bottom"].exit_code != 0:
+        print(f"[ERROR] bottom_die failed in Phase 1 at {phase1_results['bottom'].failed_at}")
+        return phase1_results["bottom"].exit_code
+
+    if phase1_results["top"].exit_code != 0:
+        print(f"[ERROR] top_die failed in Phase 1 at {phase1_results['top'].failed_at}")
+        return phase1_results["top"].exit_code
+
+    print("\n[Phase 1] Both dies completed 3_1_place_gp_skip_io successfully")
+
+    # =========================================================================
+    # Phase 2: Run Python script for IO placement (sequential, only once)
+    # =========================================================================
+    print("\n[Phase 2] Running IO placement Python script...")
+    print("-" * 60)
+
+    bottom_def = get_def_path("bottom_die")
+    top_def = get_def_path("top_die")
+    output_dir = str(FLOW_HOME / "results" / "180_180" / "bottom_die" / FLOW_VARIANT)
+    top_output_dir = str(FLOW_HOME / "results" / "180_180" / "top_die" / FLOW_VARIANT)
+
+    # Run 3D IO placement (handles both interconnect and non-interconnect signals)
+    result = run_io_placement_3d(
+        "flow", bottom_def, top_def, output_dir, top_output_dir, stop_event
+    )
+
+    if result.exit_code != 0:
+        print(f"[ERROR] 3D IO placement Python script failed!")
+        return result.exit_code
+
+    print("[Phase 2] IO placement TCL scripts generated successfully")
+
+    # =========================================================================
+    # Phase 3: Run both dies from 3_2_place_iop to finish concurrently
+    # =========================================================================
+    print("\n[Phase 3] Running both dies from 3_2_place_iop to finish...")
+    print("-" * 60)
+
+    phase2_results = {"bottom": None, "top": None}
+
+    def bottom_phase2_thread():
+        phase2_results["bottom"] = run_die_phase2(
+            "bottom_die", BOTTOM_CONFIG, stop_event
+        )
+
+    def top_phase2_thread():
+        phase2_results["top"] = run_die_phase2(
+            "top_die", TOP_CONFIG, stop_event
+        )
+
+    # Start Phase 3 threads
+    bottom_thread = threading.Thread(target=bottom_phase2_thread)
+    top_thread = threading.Thread(target=top_phase2_thread)
+
+    bottom_thread.start()
+    top_thread.start()
+
+    # Wait for both to complete Phase 3
+    bottom_thread.join()
+    top_thread.join()
+
+    # Print final results
+    print("\n" + "=" * 60)
     print("Flow execution completed")
     print("=" * 60)
 
-    for die, result in [("bottom_die", results["bottom"]), ("top_die", results["top"])]:
+    for die, result in [("bottom_die", phase2_results["bottom"]), ("top_die", phase2_results["top"])]:
         if result:
             status = "SUCCESS" if result.exit_code == 0 else "FAILED"
             failed_at = f" at {result.failed_at}" if result.failed_at else ""
@@ -353,38 +525,107 @@ def run_parallel() -> int:
     print("=" * 60)
 
     # Return the worst exit code
-    exit_codes = [r.exit_code for r in [results["bottom"], results["top"]] if r]
+    exit_codes = [r.exit_code for r in [phase2_results["bottom"], phase2_results["top"]] if r]
     return max(exit_codes) if exit_codes else 0
 
 
 def run_sequential():
-    """Run flows sequentially (bottom first, then top)."""
-    # Create events for this run
-    bottom_3_2_completed = threading.Event()
+    """Run flows sequentially with 3-phase execution."""
     stop_event = threading.Event()
 
     print("=" * 60)
     print("Starting sequential 3D IC flow execution")
     print("=" * 60)
-
-    # Run bottom_die first
-    print("\n[Phase 1] Running bottom_die...")
-    bottom_result = run_bottom_die(bottom_3_2_completed, stop_event)
-
-    if bottom_result.exit_code != 0:
-        print(f"[bottom_die] Failed at {bottom_result.failed_at}, skipping top_die")
-        return bottom_result.exit_code
-
-    # Run top_die after bottom completes
-    print("\n[Phase 2] Running top_die...")
-    top_result = run_top_die(bottom_3_2_completed, stop_event)
-
-    print("=" * 60)
-    print(f"bottom_die: exit code {bottom_result.exit_code}")
-    print(f"top_die: exit code {top_result.exit_code}")
+    print(f"Flow: Phase1 (3_1) -> Python IO placement -> Phase2 (3_2 -> finish)")
     print("=" * 60)
 
-    return max(bottom_result.exit_code, top_result.exit_code)
+    # =========================================================================
+    # Phase 1: Run bottom_die up to 3_1_place_gp_skip_io
+    # =========================================================================
+    print("\n[Phase 1a] Running bottom_die up to 3_1_place_gp_skip_io...")
+    print("-" * 60)
+
+    bottom_dummy_event = threading.Event()
+    bottom_phase1_result = run_die_phase1(
+        "bottom_die", BOTTOM_CONFIG, bottom_dummy_event, stop_event
+    )
+
+    if bottom_phase1_result.exit_code != 0:
+        print(f"[ERROR] bottom_die failed in Phase 1 at {bottom_phase1_result.failed_at}")
+        return bottom_phase1_result.exit_code
+
+    # =========================================================================
+    # Phase 1: Run top_die up to 3_1_place_gp_skip_io
+    # =========================================================================
+    print("\n[Phase 1b] Running top_die up to 3_1_place_gp_skip_io...")
+    print("-" * 60)
+
+    top_dummy_event = threading.Event()
+    top_phase1_result = run_die_phase1(
+        "top_die", TOP_CONFIG, top_dummy_event, stop_event
+    )
+
+    if top_phase1_result.exit_code != 0:
+        print(f"[ERROR] top_die failed in Phase 1 at {top_phase1_result.failed_at}")
+        return top_phase1_result.exit_code
+
+    print("\n[Phase 1] Both dies completed 3_1_place_gp_skip_io successfully")
+
+    # =========================================================================
+    # Phase 2: Run Python script for IO placement
+    # =========================================================================
+    print("\n[Phase 2] Running IO placement Python script...")
+    print("-" * 60)
+
+    bottom_def = get_def_path("bottom_die")
+    top_def = get_def_path("top_die")
+    output_dir = str(FLOW_HOME / "results" / "180_180" / "bottom_die" / FLOW_VARIANT)
+    top_output_dir = str(FLOW_HOME / "results" / "180_180" / "top_die" / FLOW_VARIANT)
+
+    # Run 3D IO placement (handles both interconnect and non-interconnect signals)
+    result = run_io_placement_3d(
+        "flow", bottom_def, top_def, output_dir, top_output_dir, stop_event
+    )
+
+    if result.exit_code != 0:
+        print(f"[ERROR] 3D IO placement Python script failed!")
+        return result.exit_code
+
+    print("[Phase 2] IO placement TCL scripts generated successfully")
+
+    # =========================================================================
+    # Phase 3: Run both dies from 3_2_place_iop to finish (bottom first, then top)
+    # =========================================================================
+    print("\n[Phase 3a] Running bottom_die from 3_2_place_iop to finish...")
+    print("-" * 60)
+
+    bottom_phase2_result = run_die_phase2(
+        "bottom_die", BOTTOM_CONFIG, stop_event
+    )
+
+    if bottom_phase2_result.exit_code != 0:
+        print(f"[ERROR] bottom_die failed in Phase 2 at {bottom_phase2_result.failed_at}")
+        return bottom_phase2_result.exit_code
+
+    print("\n[Phase 3b] Running top_die from 3_2_place_iop to finish...")
+    print("-" * 60)
+
+    top_phase2_result = run_die_phase2(
+        "top_die", TOP_CONFIG, stop_event
+    )
+
+    if top_phase2_result.exit_code != 0:
+        print(f"[ERROR] top_die failed in Phase 2 at {top_phase2_result.failed_at}")
+        return top_phase2_result.exit_code
+
+    print("\n" + "=" * 60)
+    print("Flow execution completed")
+    print("=" * 60)
+    print(f"bottom_die: exit code {bottom_phase2_result.exit_code}")
+    print(f"top_die: exit code {top_phase2_result.exit_code}")
+    print("=" * 60)
+
+    return max(bottom_phase2_result.exit_code, top_phase2_result.exit_code)
 
 
 def run_single_die(die_name: str) -> int:
@@ -420,6 +661,19 @@ def clean_die(name: str, config_path: str) -> int:
         print(f"[{name}] Clean completed successfully!")
     else:
         print(f"[{name}] Clean failed with exit code {exit_code}")
+
+    # Clean up generated fp.json and fp.png files
+    die_short_name = "bottom_die" if "bottom" in name else "top_die"
+    results_dir = FLOW_HOME / "results" / "180_180" / die_short_name / FLOW_VARIANT
+
+    if results_dir.exists():
+        for pattern in ["*.fp.json", "*.fp.png"]:
+            for file_path in results_dir.glob(pattern):
+                try:
+                    file_path.unlink()
+                    print(f"[{name}] Removed: {file_path.name}")
+                except OSError as e:
+                    print(f"[{name}] Failed to remove {file_path.name}: {e}")
 
     return exit_code
 

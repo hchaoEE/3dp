@@ -9,6 +9,13 @@ out/
 data/artifacts/
 dump.rdb
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
 # Flow generated directories
 flow/logs/
 flow/objects/
